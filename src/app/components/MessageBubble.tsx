@@ -1,7 +1,13 @@
 import { Message } from '../types';
 import { motion } from 'framer-motion';
+import LoadingDots from './LoadingDots';
 
-export default function MessageBubble({ message }: { message: Message }) {
+interface MessageBubbleProps {
+  message: Message;
+  isLoading?: boolean;
+}
+
+export default function MessageBubble({ message, isLoading }: MessageBubbleProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -12,7 +18,11 @@ export default function MessageBubble({ message }: { message: Message }) {
           : 'bg-gray-100 mr-auto max-w-[80%]'
       }`}
     >
-      <p className="text-gray-800">{message.content}</p>
+      {isLoading && message.content === '' ? (
+        <LoadingDots />
+      ) : (
+        <p className="text-gray-800">{message.content}</p>
+      )}
     </motion.div>
   );
 }

@@ -3,9 +3,7 @@ import { NextResponse } from 'next/server';
 export async function POST(req: Request) {
   try {
     const { message } = await req.json();
-    
-    console.log('Attempting to connect to Ollama...');
-    
+
     const response = await fetch('http://localhost:11434/api/generate', {
       method: 'POST',
       headers: {
@@ -14,24 +12,45 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         model: 'mistral',
         prompt: message,
-        stream: false
+        stream: true
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Ollama response not OK:', response.status, errorText);
-      throw new Error(`Ollama response failed: ${response.status} ${errorText}`);
-    }
+    const stream = new TransformStream({
+      async transform(chunk, controller) {
+        const text = new TextDecoder().decode(chunk);
+        const lines = text.split('\n').filter(line => line.trim());
+        
+        for (const line of lines) {
+          try {
+            const json = JSON.parse(line);
+            // Only send the response part of each chunk
+            if (json.response) {
+              // Send just the new text chunk
+              controller.enqueue(json.response);
+            }
+            // If done, close the stream
+            if (json.done) {
+              controller.terminate();
+            }
+          } catch (e) {
+            console.error('Error parsing JSON:', e);
+          }
+        }
+      }
+    });
 
-    const data = await response.json();
-    
-    if (!data.response) {
-      console.error('Unexpected response format:', data);
-      throw new Error('Invalid response format from Ollama');
-    }
-    
-    return NextResponse.json({ response: data.response });
+    // Pipe the response through our transform stream
+    const readable = response.body?.pipeThrough(stream);
+    if (!readable) throw new Error('No response body');
+
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (error) {
     console.error('Detailed error:', error);
     return NextResponse.json(

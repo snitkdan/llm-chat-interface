@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Message } from '../types';
+import { Message } from '../types';  
 import MessageBubble from './MessageBubble';
 
 export default function ChatInterface() {
+  const [streamStarted, setStreamStarted] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -20,7 +21,6 @@ export default function ChatInterface() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    debugger;
     if (!input.trim() || isLoading) return;
 
     const userMessage: Message = {
@@ -29,9 +29,17 @@ export default function ChatInterface() {
       role: 'user',
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    setStreamStarted(false);
+
+    const assistantMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      content: '',
+      role: 'assistant',
+    };
+    setMessages(prev => [...prev, assistantMessage]);
 
     try {
       const response = await fetch('/api/chat', {
@@ -42,24 +50,43 @@ export default function ChatInterface() {
         body: JSON.stringify({ message: input }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to get response');
-      }
-
-      const data = await response.json();
+      if (!response.ok) throw new Error('Stream response failed');
       
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: isLoading ? '...' : data.response,
-        role: 'assistant',
-      };
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No reader available');
 
-      setMessages((prev) => [...prev, aiMessage]);
+      let fullResponse = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = new TextDecoder().decode(value);
+        fullResponse += text;
+        
+        if (!streamStarted) setStreamStarted(true);
+        
+        setMessages(prev => {
+          const newMessages = [...prev];
+          const lastMessage = newMessages[newMessages.length - 1];
+          if (lastMessage.role === 'assistant') {
+            lastMessage.content = fullResponse;
+          }
+          return newMessages;
+        });
+      }
     } catch (error) {
       console.error('Error:', error);
-      // Add error handling UI here
+      setMessages(prev => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage.role === 'assistant') {
+          lastMessage.content = 'Error: Failed to get response';
+        }
+        return newMessages;
+      });
     } finally {
       setIsLoading(false);
+      setStreamStarted(false);
     }
   };
 
@@ -67,7 +94,11 @@ export default function ChatInterface() {
     <div className="flex flex-col h-screen max-w-2xl mx-auto p-4">
       <div className="flex-1 overflow-y-auto mb-4">
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <MessageBubble 
+            key={message.id} 
+            message={message} 
+            isLoading={isLoading && !streamStarted && message.role === 'assistant' && message.content === ''}
+          />
         ))}
         <div ref={messagesEndRef} />
       </div>
