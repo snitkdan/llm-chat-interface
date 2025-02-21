@@ -20,6 +20,7 @@ export default function ChatInterface() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    debugger;
     if (!input.trim() || isLoading) return;
 
     const userMessage: Message = {
@@ -32,16 +33,34 @@ export default function ChatInterface() {
     setInput('');
     setIsLoading(true);
 
-    // Simulate AI response (replace with your actual API call)
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: input }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response');
+      }
+
+      const data = await response.json();
+      
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `Response to: ${input}`,
+        content: isLoading ? '...' : data.response,
         role: 'assistant',
       };
+
       setMessages((prev) => [...prev, aiMessage]);
+    } catch (error) {
+      console.error('Error:', error);
+      // Add error handling UI here
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   return (
